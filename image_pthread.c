@@ -2,7 +2,8 @@
 #include <stdint.h>
 #include <time.h>
 #include <string.h>
-#include "image.h"
+#include <pthread.h>
+#include "image_pthread.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -12,6 +13,13 @@
 
 //An array of kernel matrices to be used for image convolution.  
 //The indexes of these match the enumeration from the header file. ie. algorithms[BLUR] returns the kernel corresponding to a box blur.
+int min(int a, int b){
+	if (a < b){
+		return a;
+	}
+	return b;
+}
+
 Matrix algorithms[]={
     {{0,-1,0},{-1,4,-1},{0,-1,0}},
     {{0,-1,0},{-1,5,-1},{0,-1,0}},
@@ -56,16 +64,25 @@ uint8_t getPixelValue(Image* srcImage,int x,int y,int bit,Matrix algorithm){
 //            destImage: A pointer to a  pre-allocated (including space for the pixel array) structure to receive the convoluted image.  It should be the same size as srcImage
 //            algorithm: The kernel matrix to use for the convolution
 //Returns: Nothing
-void convolute(Image* srcImage,Image* destImage,Matrix algorithm){
+void *convolute(void* vars){
     int row,pix,bit,span;
+    struct args_struct *input = vars;
+    Image* srcImage = input->source_image;
+    Image* destImage = input->dest_image;    
+    long my_rank = input->rank;
+    int thread_count = input->thread_count;
+    int start = (srcImage->height / thread_count) * my_rank + 1;
+    int end = (srcImage->height / thread_count) * (my_rank + 1);
+    int endfr = min(end, srcImage->height);
     span=srcImage->bpp*srcImage->bpp;
-    for (row=0;row<srcImage->height;row++){
+    for (row=start;row<=endfr;row++){
         for (pix=0;pix<srcImage->width;pix++){
             for (bit=0;bit<srcImage->bpp;bit++){
-                destImage->data[Index(pix,row,srcImage->width,bit,srcImage->bpp)]=getPixelValue(srcImage,pix,row,bit,algorithm);
+                destImage->data[Index(pix,row,srcImage->width,bit,srcImage->bpp)]=getPixelValue(srcImage,pix,row,bit,algorithms[input->type]);
             }
         }
     }
+    free(vars);
 }
 
 //Usage: Prints usage information for the program
@@ -91,6 +108,8 @@ enum KernelTypes GetKernelType(char* type){
 //argv is expected to take 2 arguments.  First is the source file name (can be jpg, png, bmp, tga).  Second is the lower case name of the algorithm.
 int main(int argc,char** argv){
     long t1,t2;
+    int num_threads = 10;
+    long thread;
 
     stbi_set_flip_vertically_on_load(0); 
     if (argc!=3) return Usage();
@@ -107,23 +126,41 @@ int main(int argc,char** argv){
         return -1;
     }
 
-    //Start of Code that runs the application that needs to be parralellized
-    printf("Starting Process Serial ...\n");
-    t1=time(NULL);  
+    //Code that runs the application that needs to be parralellized
+    printf("Starting Process P-Thread ...\n");
+    t1 = time(NULL);
     destImage.bpp=srcImage.bpp;
     destImage.height=srcImage.height;
     destImage.width=srcImage.width;
     destImage.data=malloc(sizeof(uint8_t)*destImage.width*destImage.bpp*destImage.height);
-    convolute(&srcImage,&destImage,algorithms[type]);
-    t2=time(NULL);
+    
+    pthread_t* thread_handles;
+    thread_handles = (pthread_t*) malloc(num_threads * sizeof(pthread_t));
+    for(thread = 0; thread < num_threads; thread++){
+        struct args_struct *input = malloc(sizeof(struct args_struct));
+        input->source_image = &srcImage;
+        input->dest_image = &destImage;
+        input->type = type; 
+        input->rank = thread;
+        input->thread_count = num_threads;
+        pthread_create(&thread_handles[thread], NULL, convolute , input);
+    }
+    t2 = time(NULL);
     printf("Process Took %ld seconds\n",t2-t1);
     // End of Code that runs the application that needs to be parralellized
-
-    printf("Saving image now ...\n");
+    
+    
+    printf("Saving image now...\n");
     stbi_write_png("output.png",destImage.width,destImage.height,destImage.bpp,destImage.data,destImage.bpp*destImage.width);
     stbi_image_free(srcImage.data);
     
+    for (thread = 0; thread < num_threads; thread++){
+    	pthread_join(thread_handles[thread], NULL);
+    }
+    free(thread_handles);
     free(destImage.data);
+    //t2=time(NULL);
     printf("Saved image --Done\n");
+
    return 0;
 }

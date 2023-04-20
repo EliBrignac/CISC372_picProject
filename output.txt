@@ -1,0 +1,9 @@
+Script started on Tue Apr 18 15:27:12 2023
+]0;shreeya@r1n00.darwin:~/CISC372_picProject[?1034h[shreeya@r1n00 CISC372_picProject]$ srun image_pthread i pic1.jpg edge
+Took 0 seconds
+]0;shreeya@r1n00.darwin:~/CISC372_picProject[shreeya@r1n00 CISC372_picProject]$ srun image_pthread pic1.jpg edge[1P[1P[1P[1P[1P[1P[1P[1@o[1@m[1@p
+Took 0 seconds
+]0;shreeya@r1n00.darwin:~/CISC372_picProject[shreeya@r1n00 CISC372_picProject]$ exit
+exit
+
+Script done on Tue Apr 18 15:28:02 2023
